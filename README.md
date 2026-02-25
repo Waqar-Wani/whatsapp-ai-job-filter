@@ -19,7 +19,7 @@
 This project automates the full pipeline:
 
 1. Opens WhatsApp Web with persistent login session.
-2. Finds and opens group: `Qa Paid Experience`.
+2. Finds and opens group: (`Mention group name0`).
 3. Scrolls chat history for ~30 seconds and expands truncated messages (`Read more`).
 4. Scrapes messages (sender, text, timestamp) to local temp JSON.
 5. Filters messages with OpenRouter AI into structured job fields.
@@ -116,11 +116,11 @@ OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_SITE_URL=
 OPENROUTER_SITE_NAME=Job Scrapping - Whatsapp
 
-GMAIL_USER=vickywaqar111@gmail.com
+GMAIL_USER=(your personal email id))
 GMAIL_APP_PASSWORD=...
 
 GOOGLE_SERVICE_ACCOUNT_FILE=config/service_account.json
-GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1R5HHz-q7XYZ-AhVpO_Rv-40W7XiJYelBXKHQH3omAhc/edit?gid=0#gid=0
+GOOGLE_SHEET_URL=(your google sheet url))
 
 CV_FILE_PATH=QA_Waqar_Wani__Resume.pdf
 OUTREACH_WORKSHEET=Filtered Jobs
@@ -210,7 +210,7 @@ Columns:
 Add cron:
 
 ```bash
-(crontab -l 2>/dev/null; echo '*/5 * * * * /Users/waqar/GitHub/Job\ Scrapping\ -\ Whatsapp/run_main_cron.sh') | crontab -
+(crontab -l 2>/dev/null; echo '*/5 * * * * /Users/dev/GitHub/Job\ Scrapping\ -\ Whatsapp/run_main_cron.sh') | crontab -
 ```
 
 Verify:
