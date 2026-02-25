@@ -1,0 +1,34 @@
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Credentials and private artifacts
+config/service_account.json
+cv/
+*.pem
+*.key
+
+# Runtime data and logs
+logs/
+data/
+*.log
+
+# Playwright / browser session data
+whatsapp_session/
+data/whatsapp_session/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

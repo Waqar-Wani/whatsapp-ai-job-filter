@@ -1,0 +1,7 @@
+playwright
+openai
+httpx
+gspread
+google-auth
+pandas
+python-dotenv
