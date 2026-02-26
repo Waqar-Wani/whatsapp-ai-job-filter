@@ -7,13 +7,13 @@ Please find the below details with my updated CV for your reference. And revert 
 
 Name:  Waqar Maqbool Wani
 
-Exp: 02 Years 08 months
+Exp: 03 Years 02 months
 
 Notice period: 15 March last Working day
 
-Current CTC:  2,64,000
+Current CTC:  3,64,000
 
-Expected CTC: 4,20,000
+Expected CTC: 5,20,000
 
 Current company:  The Khanqah International Srinagar
 
@@ -23,7 +23,7 @@ Current Location:  Srinagar
 
 Alternate Contact No:  8803438801
 
-Thanks and Regards 
-
-Waqar Maqbool Wani | Software Engineer 
-+91 8803438801 | LinkedIn
+<br><br>
+<b>Thanks and Regards</b><br>
+<b>Waqar Maqbool Wani | Software Engineer</b><br>
+<b>+91 8803438801 | <a href="https://www.linkedin.com/in/waqar-it88034/" target="_blank">LinkedIn</a></b>

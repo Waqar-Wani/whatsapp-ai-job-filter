@@ -4,6 +4,8 @@ import os
 import smtplib
 import argparse
 import sys
+import re
+import html
 from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -152,11 +154,31 @@ def compose_email(
     body: str,
     cv_file_path: str,
 ) -> MIMEMultipart:
-    msg = MIMEMultipart()
+    msg = MIMEMultipart("mixed")
     msg["From"] = sender_email
     msg["To"] = recipient_email
     msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
+
+    def _looks_like_html(text: str) -> bool:
+        return bool(re.search(r"<[^>]+>", text))
+
+    def _html_to_plain(text: str) -> str:
+        plain = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        plain = re.sub(r"(?i)</p>", "\n", plain)
+        plain = re.sub(r"<[^>]+>", "", plain)
+        return html.unescape(plain).strip()
+
+    if _looks_like_html(body):
+        plain_body = _html_to_plain(body)
+        html_body = body
+    else:
+        plain_body = body
+        html_body = "<html><body>" + html.escape(body).replace("\n", "<br>\n") + "</body></html>"
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(plain_body, "plain", "utf-8"))
+    alt.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(alt)
 
     with open(cv_file_path, "rb") as f:
         attachment = MIMEApplication(f.read(), _subtype="pdf")
