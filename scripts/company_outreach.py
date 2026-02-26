@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import gspread
+import httpx
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
@@ -74,6 +75,30 @@ def load_config() -> Dict[str, str]:
         if not p.is_absolute():
             cfg[key] = str((PROJECT_ROOT / p).resolve())
     return cfg
+
+
+def ensure_internet_connectivity(timeout_seconds: float = 8.0) -> None:
+    test_urls = [
+        "https://www.google.com/generate_204",
+        "https://docs.google.com",
+        "https://smtp.gmail.com",
+    ]
+    errors = []
+    for url in test_urls:
+        try:
+            with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+                resp = client.get(url)
+            if resp.status_code < 500:
+                logging.info("Internet check passed via %s (status=%s)", url, resp.status_code)
+                return
+            errors.append(f"{url} -> HTTP {resp.status_code}")
+        except Exception as exc:
+            errors.append(f"{url} -> {exc}")
+
+    raise RuntimeError(
+        "Internet connectivity check failed for outreach flow. "
+        f"Checks: {' | '.join(errors)}"
+    )
 
 
 def gspread_client(service_account_file: str) -> gspread.Client:
@@ -226,6 +251,7 @@ def main() -> None:
 
     setup_logging()
     cfg = load_config()
+    ensure_internet_connectivity()
 
     client = gspread_client(cfg["service_account_file"])
     spreadsheet = client.open_by_url(cfg["sheet_url"])

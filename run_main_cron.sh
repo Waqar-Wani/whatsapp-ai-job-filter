@@ -21,6 +21,6 @@ touch "$LOCK_FILE"
 
 {
   echo "$(date '+%Y-%m-%d %H:%M:%S') | INFO | CRON | Starting scheduled main.py run"
-  "$VENV_PYTHON" "$MAIN_FILE"
+  LOG_TO_STDOUT=false "$VENV_PYTHON" "$MAIN_FILE"
   echo "$(date '+%Y-%m-%d %H:%M:%S') | INFO | CRON | Completed scheduled main.py run"
 } >> "$LOG_FILE" 2>&1

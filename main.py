@@ -62,9 +62,11 @@ def setup_logging() -> None:
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
 
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    root.addHandler(console_handler)
+    log_to_stdout = (os.getenv("LOG_TO_STDOUT", "true") or "").strip().lower()
+    if log_to_stdout in {"1", "true", "yes"}:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        root.addHandler(console_handler)
 
 
 def validate_env() -> Dict[str, str]:
@@ -92,6 +94,34 @@ def validate_env() -> Dict[str, str]:
         "service_account_file": os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"],
         "google_sheet_url": os.getenv("GOOGLE_SHEET_URL", DEFAULT_SHEET_URL),
     }
+
+
+def ensure_internet_connectivity(timeout_seconds: float = 8.0) -> None:
+    """
+    Abort early when internet is unavailable.
+    We test lightweight public endpoints used by this workflow.
+    """
+    test_urls = [
+        "https://web.whatsapp.com",
+        "https://openrouter.ai",
+        "https://www.google.com/generate_204",
+    ]
+    errors = []
+    for url in test_urls:
+        try:
+            with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+                response = client.get(url)
+            if response.status_code < 500:
+                logging.info("Internet check passed via %s (status=%s)", url, response.status_code)
+                return
+            errors.append(f"{url} -> HTTP {response.status_code}")
+        except Exception as exc:
+            errors.append(f"{url} -> {exc}")
+
+    raise RuntimeError(
+        "Internet connectivity check failed. Please verify network before running automation. "
+        f"Checks: {' | '.join(errors)}"
+    )
 
 
 def load_last_processed_timestamp() -> Optional[datetime]:
@@ -701,6 +731,12 @@ def main() -> None:
     logging.info("Step 1/9: Validating environment configuration.")
 
     config = validate_env()
+    logging.info("Step 1.5/9: Checking internet connectivity.")
+    try:
+        ensure_internet_connectivity()
+    except RuntimeError as exc:
+        logging.warning("Run skipped: %s", exc)
+        return
     logging.info("Step 2/9: Loading last processed timestamp.")
     last_processed = load_last_processed_timestamp()
     logging.info("Last processed timestamp: %s", last_processed)
