@@ -193,9 +193,13 @@ def compose_email(
         plain = re.sub(r"<[^>]+>", "", plain)
         return html.unescape(plain).strip()
 
+    def _preserve_newlines_in_html(text: str) -> str:
+        # Gmail collapses raw newlines in HTML, so convert template line breaks to <br>.
+        return text.replace("\r\n", "\n").replace("\n", "<br>\n")
+
     if _looks_like_html(body):
         plain_body = _html_to_plain(body)
-        html_body = body
+        html_body = _preserve_newlines_in_html(body)
     else:
         plain_body = body
         html_body = "<html><body>" + html.escape(body).replace("\n", "<br>\n") + "</body></html>"
