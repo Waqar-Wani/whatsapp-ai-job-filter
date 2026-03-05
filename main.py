@@ -701,7 +701,7 @@ def append_relevant_jobs(worksheet, jobs: List[Dict[str, Any]]) -> None:
             ]
         )
     if rows:
-        worksheet.append_rows(rows, value_input_option="USER_ENTERED")
+        worksheet.append_rows(rows, value_input_option="RAW")
 
 
 def message_dedup_key(message: Dict[str, Any]) -> str:
@@ -878,7 +878,9 @@ def main() -> None:
 
         relevant_jobs.append(
             {
-                "date": msg["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                "date": (
+                    f"{msg['timestamp'].strftime('%d/%m/%Y %H:%M:%S')}"
+                ),
                 "sender": msg["sender"],
                 "company": ai_result.get("company", ""),
                 "role": ai_result.get("role", ""),
