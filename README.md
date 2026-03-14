@@ -176,6 +176,24 @@ source .venv/bin/activate
 python scripts/sheet_update_mail_trigger.py
 ```
 
+### Clear Playwright browser cache on Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\clear_browser_cache.ps1
+```
+
+Use `-FullReset` only if you also want to clear additional browser storage:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\clear_browser_cache.ps1 -FullReset
+```
+
+Use `-LogoutReset` if you want a full session wipe that logs WhatsApp Web out and forces a fresh browser profile:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\clear_browser_cache.ps1 -LogoutReset
+```
+
 ---
 
 ## 📬 Output Schema (Google Sheet)

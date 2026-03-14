@@ -13,6 +13,11 @@ DEFAULT_WORKSHEET = "Filtered Jobs"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def format_sheet_datetime(value: datetime) -> str:
+    time_part = value.strftime("%I:%M:%S %p").lstrip("0")
+    return f"{value.strftime('%A, %B')} {value.day}, {value.year}, {time_part}"
+
+
 def get_client(service_account_file: str) -> gspread.Client:
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -36,10 +41,11 @@ def ensure_worksheet(spreadsheet, worksheet_name: str):
         "Experience",
         "Skills",
         "Contact Email",
+        "Source Key",
     ]
     row1 = ws.row_values(1)
     if row1 != headers:
-        ws.update(values=[headers], range_name="A1:G1")
+        ws.update(values=[headers], range_name="A1:H1")
     return ws
 
 
@@ -70,20 +76,21 @@ def main() -> None:
     worksheet = ensure_worksheet(spreadsheet, args.worksheet)
 
     dummy_row = [
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        format_sheet_datetime(datetime.now()),
         "Dummy Company",
         "Dummy QA Engineer",
         "Remote",
         "2+ years",
         "Playwright, Python, API Testing",
         "dummy@example.com",
+        "dummy-source-key",
     ]
 
     if args.mode == "append":
         worksheet.append_row(dummy_row, value_input_option="USER_ENTERED")
         action = "appended"
     else:
-        worksheet.update(values=[dummy_row], range_name="A2:G2")
+        worksheet.update(values=[dummy_row], range_name="A2:H2")
         action = "updated row 2"
 
     # Read back last row to verify communication.

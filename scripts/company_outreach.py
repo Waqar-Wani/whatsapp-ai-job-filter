@@ -33,6 +33,11 @@ DEFAULT_TEMPLATE_FILE = str(TEMPLATE_DIR / "company_email_template.txt")
 DEFAULT_SUBJECT_TEMPLATE = "Application for {role} - {company}"
 
 
+def format_sheet_datetime(value: datetime) -> str:
+    time_part = value.strftime("%I:%M:%S %p").lstrip("0")
+    return f"{value.strftime('%A, %B')} {value.day}, {value.year}, {time_part}"
+
+
 def setup_logging() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,14 +167,25 @@ def save_sent_tracker(data: Dict[str, str]) -> None:
 
 
 def row_unique_key(row: Dict[str, str]) -> str:
-    return "|".join(
-        [
-            row.get("date", "").strip().lower(),
-            row.get("company", "").strip().lower(),
-            row.get("role", "").strip().lower(),
-            row.get("contact_email", "").strip().lower(),
-        ]
-    )
+    source_key = normalize_key_part(row.get("source_key", ""))
+    if source_key:
+        return f"source|{source_key}"
+
+    date_value = normalize_key_part(row.get("date", ""))
+    company = normalize_key_part(row.get("company", ""))
+    role = normalize_key_part(row.get("role", ""))
+    contact_email = normalize_key_part(row.get("contact_email", ""))
+    location = normalize_key_part(row.get("location", ""))
+
+    if contact_email:
+        return f"job|{date_value}|{company}|{role}|{contact_email}"
+    return f"job|{date_value}|{company}|{role}|{location}"
+
+
+def normalize_key_part(value: str) -> str:
+    text = (value or "").strip().lower()
+    text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2013", "-").replace("\u2014", "-")
+    return " ".join(text.split())
 
 
 def compose_email(
@@ -267,6 +283,7 @@ def main() -> None:
 
     records, sheet_cols = get_records_with_rows(worksheet)
     to_send = []
+    queued_keys = set()
     for row in records:
         contact = row.get("contact_email", "").strip()
         if not contact:
@@ -276,6 +293,9 @@ def main() -> None:
         key = row_unique_key(row)
         if key in sent_tracker:
             continue
+        if key in queued_keys:
+            continue
+        queued_keys.add(key)
         to_send.append(row)
 
     if args.limit and args.limit > 0:
@@ -313,7 +333,7 @@ def main() -> None:
             )
             send_email(cfg["gmail_user"], cfg["gmail_app_password"], msg)
 
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            now = format_sheet_datetime(datetime.now())
             mark_row(worksheet, row_num, col_idx["outreach_status"], "SENT")
             mark_row(worksheet, row_num, col_idx["outreach_sent_at"], now)
             mark_row(worksheet, row_num, col_idx["outreach_error"], "")
