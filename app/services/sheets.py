@@ -15,7 +15,8 @@ SHEET_HEADERS = [
     "Experience",
     "Skills",
     "Contact Email",
-    "Source Key",
+    "Outreach Status",
+    "Outreach Sent At",
 ]
 
 
@@ -77,7 +78,8 @@ def append_relevant_jobs(worksheet, jobs: List[Dict[str, Any]]) -> None:
                 job["experience"],
                 job["skills"],
                 job["contact_email"],
-                job.get("source_key", ""),
+                "",
+                "",
             ]
         )
     if rows:
@@ -91,10 +93,6 @@ def normalize_key_part(value: str) -> str:
 
 
 def canonical_job_identity(values: Dict[str, Any]) -> str:
-    source_key = normalize_key_part(str(values.get("source_key", "")))
-    if source_key:
-        return f"source|{source_key}"
-
     date_value = normalize_key_part(str(values.get("date", "")))
     company = normalize_key_part(str(values.get("company", "")))
     role = normalize_key_part(str(values.get("role", "")))
@@ -121,10 +119,18 @@ def deduplicate_jobs_for_sheet(worksheet, jobs: List[Dict[str, Any]]) -> List[Di
 
     unique_jobs: List[Dict[str, Any]] = []
     batch_seen = set()
+    source_seen = set()
     for job in jobs:
+        source_key = normalize_key_part(str(job.get("source_key", "")))
+        if source_key and source_key in source_seen:
+            continue
+
         key = canonical_job_identity(job)
         if key in existing_keys or key in batch_seen:
             continue
+
+        if source_key:
+            source_seen.add(source_key)
         batch_seen.add(key)
         unique_jobs.append(job)
 

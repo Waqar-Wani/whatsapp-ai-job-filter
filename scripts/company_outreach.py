@@ -3,9 +3,11 @@ import logging
 import os
 import smtplib
 import argparse
+import socket
 import sys
 import re
 import html
+import time
 from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -31,6 +33,10 @@ SENT_TRACKER_FILE = DATA_DIR / "sent_company_emails.json"
 DEFAULT_WORKSHEET = "Filtered Jobs"
 DEFAULT_TEMPLATE_FILE = str(TEMPLATE_DIR / "company_email_template.txt")
 DEFAULT_SUBJECT_TEMPLATE = "Application for {role} - {company}"
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_TIMEOUT_SECONDS = 30
+SMTP_MAX_RETRIES = 3
 
 
 def format_sheet_datetime(value: datetime) -> str:
@@ -122,7 +128,7 @@ def normalize_header(value: str) -> str:
 def ensure_outreach_columns(worksheet) -> Dict[str, int]:
     headers = worksheet.row_values(1)
     normalized = [normalize_header(h) for h in headers]
-    required = ["outreach_status", "outreach_sent_at", "outreach_error"]
+    required = ["outreach_status", "outreach_sent_at"]
 
     for col in required:
         if col not in normalized:
@@ -233,10 +239,30 @@ def compose_email(
 
 
 def send_email(gmail_user: str, app_password: str, msg: MIMEMultipart) -> None:
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(gmail_user, app_password)
-        server.sendmail(gmail_user, [msg["To"]], msg.as_string())
+    last_error = None
+    for attempt in range(1, SMTP_MAX_RETRIES + 1):
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
+                server.starttls()
+                server.login(gmail_user, app_password)
+                server.sendmail(gmail_user, [msg["To"]], msg.as_string())
+            return
+        except (TimeoutError, socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
+            last_error = exc
+            logging.warning(
+                "SMTP send attempt %s/%s failed for %s: %s",
+                attempt,
+                SMTP_MAX_RETRIES,
+                msg["To"],
+                exc,
+            )
+            if attempt >= SMTP_MAX_RETRIES:
+                break
+            time.sleep(2 ** (attempt - 1))
+
+    raise TimeoutError(
+        f"SMTP delivery failed after {SMTP_MAX_RETRIES} attempt(s) for {msg['To']}: {last_error}"
+    )
 
 
 def get_records_with_rows(worksheet) -> Tuple[List[Dict[str, str]], Dict[str, int]]:
@@ -336,14 +362,11 @@ def main() -> None:
             now = format_sheet_datetime(datetime.now())
             mark_row(worksheet, row_num, col_idx["outreach_status"], "SENT")
             mark_row(worksheet, row_num, col_idx["outreach_sent_at"], now)
-            mark_row(worksheet, row_num, col_idx["outreach_error"], "")
             sent_tracker[key] = now
             sent_count += 1
             logging.info("Sent outreach email to %s (%s - %s)", contact, company, role)
         except Exception as exc:
-            err = str(exc)[:450]
             mark_row(worksheet, row_num, col_idx["outreach_status"], "FAILED")
-            mark_row(worksheet, row_num, col_idx["outreach_error"], err)
             logging.exception("Failed outreach to %s: %s", contact, exc)
 
     save_sent_tracker(sent_tracker)

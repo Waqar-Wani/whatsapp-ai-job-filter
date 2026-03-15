@@ -41,11 +41,12 @@ def ensure_worksheet(spreadsheet, worksheet_name: str):
         "Experience",
         "Skills",
         "Contact Email",
-        "Source Key",
+        "Outreach Status",
+        "Outreach Sent At",
     ]
     row1 = ws.row_values(1)
     if row1 != headers:
-        ws.update(values=[headers], range_name="A1:H1")
+        ws.update(values=[headers], range_name="A1:I1")
     return ws
 
 
@@ -83,14 +84,15 @@ def main() -> None:
         "2+ years",
         "Playwright, Python, API Testing",
         "dummy@example.com",
-        "dummy-source-key",
+        "",
+        "",
     ]
 
     if args.mode == "append":
         worksheet.append_row(dummy_row, value_input_option="USER_ENTERED")
         action = "appended"
     else:
-        worksheet.update(values=[dummy_row], range_name="A2:H2")
+        worksheet.update(values=[dummy_row], range_name="A2:I2")
         action = "updated row 2"
 
     # Read back last row to verify communication.
