@@ -2,6 +2,13 @@ import logging
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+# Allow module to be executed directly as a script from repository root:
+# python app/services/outreach.py
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from app.core.constants import OUTREACH_SCRIPT
 
@@ -27,3 +34,8 @@ def run_outreach_task() -> None:
     if result.stderr.strip():
         logging.warning("Outreach stderr: %s", result.stderr.strip())
     logging.info("Step: Outreach task completed with return code %s.", result.returncode)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    run_outreach_task()

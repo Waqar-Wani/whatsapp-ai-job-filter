@@ -58,6 +58,8 @@ def call_openrouter_api(
     user_prompt: str,
     site_url: str,
     site_name: str,
+    max_attempts: int = 4,
+    initial_delay: float = 1.5,
 ) -> str:
     headers = {
         "Authorization": f"Bearer {key}",
@@ -76,19 +78,46 @@ def call_openrouter_api(
         ],
         "temperature": 0,
     }
-    with httpx.Client(timeout=30) as client:
-        response = client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
-    try:
-        return data["choices"][0]["message"]["content"]
-    except Exception:
-        return json.dumps(data)
 
+    retry_status = {429, 500, 502, 503, 504}
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with httpx.Client(timeout=30) as client:
+                response = client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+            response.raise_for_status()
+            data = response.json()
+            try:
+                return data["choices"][0]["message"]["content"]
+            except Exception:
+                return json.dumps(data)
+
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            logging.warning("OpenRouter API returned %s (attempt %s/%s): %s", status_code, attempt, max_attempts, exc)
+            if status_code == 402:
+                raise RuntimeError("OpenRouter payment required (402). Update billing / API plan.")
+            if attempt < max_attempts and status_code in retry_status:
+                time.sleep(initial_delay * (2 ** (attempt - 1)))
+                continue
+            raise
+
+        except httpx.RequestError as exc:
+            logging.warning("OpenRouter request error (attempt %s/%s): %s", attempt, max_attempts, exc)
+            if attempt < max_attempts:
+                time.sleep(initial_delay * (2 ** (attempt - 1)))
+                continue
+            raise
+
+        except Exception as exc:
+            logging.error("Unexpected OpenRouter error (attempt %s/%s): %s", attempt, max_attempts, exc)
+            if attempt < max_attempts:
+                time.sleep(initial_delay * (2 ** (attempt - 1)))
+                continue
+            raise
 
 def analyze_job_post(
     text: str,

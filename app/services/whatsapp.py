@@ -1,7 +1,10 @@
 import logging
+import os
 import re
+import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from playwright.sync_api import BrowserContext, Page, TimeoutError, sync_playwright
@@ -146,15 +149,16 @@ def parse_pre_plain_text(pre_plain_text: str) -> Optional[Dict[str, Any]]:
     sender = match.group("sender").strip()
     combined = f"{date_part} {time_part}"
 
+    # Prefer day-first formats for international dates (e.g. 2/4/2026 = 2 April 2026)
     date_formats = [
-        "%m/%d/%Y %I:%M %p",
         "%d/%m/%Y %I:%M %p",
-        "%m/%d/%y %I:%M %p",
         "%d/%m/%y %I:%M %p",
-        "%m/%d/%Y %H:%M",
         "%d/%m/%Y %H:%M",
-        "%m/%d/%y %H:%M",
         "%d/%m/%y %H:%M",
+        "%m/%d/%Y %I:%M %p",
+        "%m/%d/%y %I:%M %p",
+        "%m/%d/%Y %H:%M",
+        "%m/%d/%y %H:%M",
     ]
     for fmt in date_formats:
         try:
@@ -350,13 +354,54 @@ def scrape_all_loaded_messages(page: Page, scroll_duration_seconds: int = 30) ->
     return deduped
 
 
+def _cleanup_browser_lock() -> None:
+    """Clean up stale browser lock files and processes."""
+    try:
+        # Kill any lingering Chrome processes
+        if os.name == 'nt':  # Windows
+            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], 
+                         capture_output=True, timeout=5)
+        else:  # Unix/Linux/Mac
+            subprocess.run(["pkill", "-9", "-f", "chrome"], 
+                         capture_output=True, timeout=5)
+        
+        # Remove lock files
+        for lock_file in SESSION_DIR.glob("*LOCK*"):
+            try:
+                lock_file.unlink()
+                logging.debug("Removed lock file: %s", lock_file)
+            except Exception as e:
+                logging.debug("Failed to remove lock file %s: %s", lock_file, e)
+    except Exception as e:
+        logging.debug("Browser cleanup encountered error: %s", e)
+
+
+def _launch_persistent_context_with_retry(playwright, max_retries: int = 3, retry_delay: float = 2.0):
+    """Launch persistent context with retry logic for lock file errors."""
+    for attempt in range(max_retries):
+        try:
+            logging.info("Step: Launching Playwright persistent context (attempt %d/%d).", attempt + 1, max_retries)
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=str(SESSION_DIR),
+                headless=False,
+            )
+            return context
+        except Exception as e:
+            error_msg = str(e)
+            is_lock_error = "ProcessSingleton" in error_msg or "Lock file" in error_msg or "Error code: 32" in error_msg
+            
+            if is_lock_error and attempt < max_retries - 1:
+                logging.warning("Browser lock detected on attempt %d. Cleaning up and retrying in %.1f seconds...", 
+                              attempt + 1, retry_delay)
+                _cleanup_browser_lock()
+                time.sleep(retry_delay)
+            else:
+                raise
+
+
 def get_all_messages(group_name: str) -> List[Dict[str, Any]]:
-    logging.info("Step: Launching Playwright persistent context.")
     with sync_playwright() as playwright:
-        context: BrowserContext = playwright.chromium.launch_persistent_context(
-            user_data_dir=str(SESSION_DIR),
-            headless=False,
-        )
+        context: BrowserContext = _launch_persistent_context_with_retry(playwright)
         page = context.pages[0] if context.pages else context.new_page()
 
         logging.info("Step: Opening https://web.whatsapp.com")

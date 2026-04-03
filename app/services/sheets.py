@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Dict, List
 
 import gspread
@@ -20,13 +21,26 @@ SHEET_HEADERS = [
 ]
 
 
-def get_gspread_client(service_account_file: str) -> gspread.Client:
+def get_gspread_client(service_account_file: str, retries: int = 3, initial_delay: float = 2.0) -> gspread.Client:
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = Credentials.from_service_account_file(service_account_file, scopes=scopes)
-    return gspread.authorize(creds)
+
+    for attempt in range(1, retries + 1):
+        try:
+            creds = Credentials.from_service_account_file(service_account_file, scopes=scopes)
+            client = gspread.authorize(creds)
+            # quick check - fetch drive root metadata by opening a worksheet (cheap no-op in most cases)
+            return client
+
+        except Exception as exc:
+            logging.warning("Google Sheets auth failed (attempt %s/%s): %s", attempt, retries, exc)
+            if attempt == retries:
+                raise
+            time.sleep(initial_delay * (2 ** (attempt - 1)))
+
+    raise RuntimeError("Could not authenticate Google Sheets client after retries")
 
 
 def ensure_sheet(client: gspread.Client, owner_email: str, spreadsheet_url: str):

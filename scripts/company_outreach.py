@@ -35,8 +35,8 @@ DEFAULT_TEMPLATE_FILE = str(TEMPLATE_DIR / "company_email_template.txt")
 DEFAULT_SUBJECT_TEMPLATE = "Application for {role} - {company}"
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_TIMEOUT_SECONDS = 30
-SMTP_MAX_RETRIES = 3
+SMTP_TIMEOUT_SECONDS = 60
+SMTP_MAX_RETRIES = 5
 
 
 def format_sheet_datetime(value: datetime) -> str:
@@ -238,7 +238,8 @@ def compose_email(
     return msg
 
 
-def send_email(gmail_user: str, app_password: str, msg: MIMEMultipart) -> None:
+def send_email(gmail_user: str, app_password: str, msg: MIMEMultipart) -> bool:
+    """Send email with retries. Returns True on success, False on failure."""
     last_error = None
     for attempt in range(1, SMTP_MAX_RETRIES + 1):
         try:
@@ -246,7 +247,7 @@ def send_email(gmail_user: str, app_password: str, msg: MIMEMultipart) -> None:
                 server.starttls()
                 server.login(gmail_user, app_password)
                 server.sendmail(gmail_user, [msg["To"]], msg.as_string())
-            return
+            return True
         except (TimeoutError, socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
             last_error = exc
             logging.warning(
@@ -256,13 +257,19 @@ def send_email(gmail_user: str, app_password: str, msg: MIMEMultipart) -> None:
                 msg["To"],
                 exc,
             )
-            if attempt >= SMTP_MAX_RETRIES:
-                break
-            time.sleep(2 ** (attempt - 1))
+            if attempt < SMTP_MAX_RETRIES:
+                wait_secs = 3 * (2 ** (attempt - 1))
+                logging.info("Waiting %d seconds before retry...", wait_secs)
+                time.sleep(wait_secs)
+            continue
 
-    raise TimeoutError(
-        f"SMTP delivery failed after {SMTP_MAX_RETRIES} attempt(s) for {msg['To']}: {last_error}"
+    logging.error(
+        "SMTP delivery failed after %s attempt(s) for %s: %s",
+        SMTP_MAX_RETRIES,
+        msg["To"],
+        last_error,
     )
+    return False
 
 
 def get_records_with_rows(worksheet) -> Tuple[List[Dict[str, str]], Dict[str, int]]:
@@ -330,6 +337,7 @@ def main() -> None:
     logging.info("Outreach candidates: %s", len(to_send))
 
     sent_count = 0
+    failed_count = 0
     for row in to_send:
         row_num = int(row["_row_number"])
         key = row_unique_key(row)
@@ -357,20 +365,24 @@ def main() -> None:
                 body=body,
                 cv_file_path=cfg["cv_file_path"],
             )
-            send_email(cfg["gmail_user"], cfg["gmail_app_password"], msg)
-
-            now = format_sheet_datetime(datetime.now())
-            mark_row(worksheet, row_num, col_idx["outreach_status"], "SENT")
-            mark_row(worksheet, row_num, col_idx["outreach_sent_at"], now)
-            sent_tracker[key] = now
-            sent_count += 1
-            logging.info("Sent outreach email to %s (%s - %s)", contact, company, role)
+            if send_email(cfg["gmail_user"], cfg["gmail_app_password"], msg):
+                now = format_sheet_datetime(datetime.now())
+                mark_row(worksheet, row_num, col_idx["outreach_status"], "SENT")
+                mark_row(worksheet, row_num, col_idx["outreach_sent_at"], now)
+                sent_tracker[key] = now
+                sent_count += 1
+                logging.info("Sent outreach email to %s (%s - %s)", contact, company, role)
+            else:
+                mark_row(worksheet, row_num, col_idx["outreach_status"], "FAILED")
+                failed_count += 1
+                logging.warning("Failed to send outreach email to %s (%s - %s) after retries", contact, company, role)
         except Exception as exc:
             mark_row(worksheet, row_num, col_idx["outreach_status"], "FAILED")
-            logging.exception("Failed outreach to %s: %s", contact, exc)
+            failed_count += 1
+            logging.exception("Error processing outreach for %s: %s", contact, exc)
 
     save_sent_tracker(sent_tracker)
-    logging.info("Outreach completed. Sent=%s", sent_count)
+    logging.info("Outreach completed. Sent=%s, Failed=%s", sent_count, failed_count)
     print(f"Outreach completed. Sent={sent_count}, Candidates={len(to_send)}")
 
 

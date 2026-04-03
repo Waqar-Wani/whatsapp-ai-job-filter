@@ -105,30 +105,42 @@ def run_pipeline() -> None:
 
     if relevant_jobs:
         logging.info("Step 6/9: Connecting to Google Sheets.")
-        sheets_client = get_gspread_client(config["service_account_file"])
-        worksheet = ensure_sheet(
-            sheets_client,
-            config["gmail_user"],
-            config["google_sheet_url"],
-        )
-        logging.info("Step 7/9: Deduplicating jobs before sheet append.")
-        unique_jobs = deduplicate_jobs_for_sheet(worksheet, relevant_jobs)
-        if unique_jobs:
-            logging.info("Step 8/9: Appending %s unique jobs to sheet.", len(unique_jobs))
-            append_relevant_jobs(worksheet, unique_jobs)
-            logging.info("Step 9/9: Sending email summary.")
-            send_email_summary(
-                gmail_user=config["gmail_user"],
-                gmail_app_password=config["gmail_app_password"],
-                recipient=SUMMARY_RECIPIENT,
-                jobs=unique_jobs,
+        worksheet = None
+        unique_jobs = []
+        try:
+            sheets_client = get_gspread_client(config["service_account_file"])
+            worksheet = ensure_sheet(
+                sheets_client,
+                config["gmail_user"],
+                config["google_sheet_url"],
             )
-            logging.info(
-                "Saved %s unique relevant jobs and sent summary email.",
-                len(unique_jobs),
+            logging.info("Step 7/9: Deduplicating jobs before sheet append.")
+            unique_jobs = deduplicate_jobs_for_sheet(worksheet, relevant_jobs)
+
+            if unique_jobs:
+                logging.info("Step 8/9: Appending %s unique jobs to sheet.", len(unique_jobs))
+                append_relevant_jobs(worksheet, unique_jobs)
+                logging.info("Step 9/9: Sending email summary.")
+                send_email_summary(
+                    gmail_user=config["gmail_user"],
+                    gmail_app_password=config["gmail_app_password"],
+                    recipient=SUMMARY_RECIPIENT,
+                    jobs=unique_jobs,
+                )
+                logging.info(
+                    "Saved %s unique relevant jobs and sent summary email.",
+                    len(unique_jobs),
+                )
+            else:
+                logging.info("No unique relevant jobs to append after dedup check.")
+
+        except Exception as exc:
+            logging.warning(
+                "Step 6/9+: Google Sheets/summary failed (network/auth). Continuing with state update and outreach. Error: %s",
+                exc,
             )
-        else:
-            logging.info("No unique relevant jobs to append after dedup check.")
+            # fallback: keep processing, do not stop entire pipeline
+
     else:
         logging.info("No relevant jobs detected from scraped messages.")
 
