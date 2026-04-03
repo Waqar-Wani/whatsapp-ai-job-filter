@@ -15,6 +15,7 @@ venv/
 
 # Credentials and private artifacts
 config/service_account.json
+config/gmail_oauth_client_secret.json
 cv/
 *.pem
 *.key

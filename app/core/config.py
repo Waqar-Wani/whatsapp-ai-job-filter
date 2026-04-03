@@ -9,8 +9,8 @@ from app.core.constants import DEFAULT_SHEET_URL
 def validate_env() -> Dict[str, str]:
     load_dotenv()
     required_vars = [
-        "GMAIL_USER",
-        "GMAIL_APP_PASSWORD",
+        "GMAIL_SENDER_EMAIL",
+        "GMAIL_OAUTH_CLIENT_SECRET_FILE",
         "GOOGLE_SERVICE_ACCOUNT_FILE",
         "OPENROUTER_API_KEY",
     ]
@@ -26,8 +26,10 @@ def validate_env() -> Dict[str, str]:
             "OPENROUTER_SITE_NAME",
             "Job Scrapping - Whatsapp",
         ),
-        "gmail_user": os.environ["GMAIL_USER"],
-        "gmail_app_password": os.environ["GMAIL_APP_PASSWORD"],
+        "gmail_sender_email": os.environ["GMAIL_SENDER_EMAIL"],
+        "gmail_oauth_client_secret_file": os.environ["GMAIL_OAUTH_CLIENT_SECRET_FILE"],
+        "gmail_token_file": os.getenv("GMAIL_TOKEN_FILE", "data/gmail_token.json"),
+        "gmail_reply_to": os.getenv("GMAIL_REPLY_TO", ""),
         "service_account_file": os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"],
         "google_sheet_url": os.getenv("GOOGLE_SHEET_URL", DEFAULT_SHEET_URL),
     }

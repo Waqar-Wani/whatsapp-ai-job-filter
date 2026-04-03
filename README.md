@@ -5,7 +5,7 @@
   <img alt="Playwright" src="https://img.shields.io/badge/Playwright-Automation-2EAD33?style=for-the-badge&logo=playwright&logoColor=white">
   <img alt="OpenRouter" src="https://img.shields.io/badge/OpenRouter-LLM-111827?style=for-the-badge">
   <img alt="Google Sheets" src="https://img.shields.io/badge/Google%20Sheets-Connected-34A853?style=for-the-badge&logo=googlesheets&logoColor=white">
-  <img alt="Gmail SMTP" src="https://img.shields.io/badge/Gmail-SMTP-EA4335?style=for-the-badge&logo=gmail&logoColor=white">
+  <img alt="Gmail API" src="https://img.shields.io/badge/Gmail-API-EA4335?style=for-the-badge&logo=gmail&logoColor=white">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@ This project automates the full pipeline:
 4. Scrapes messages (sender, text, timestamp) to local temp JSON.
 5. Filters messages with OpenRouter AI into structured job fields.
 6. Saves relevant jobs to Google Sheet (`Filtered Jobs`) with dedup logic.
-7. Sends outreach emails to company contacts with CV attachment.
+7. Sends outreach emails to company contacts with CV attachment via Gmail API.
 8. Ensures already-contacted companies/rows are not emailed again.
 
 ---
@@ -116,8 +116,10 @@ OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_SITE_URL=
 OPENROUTER_SITE_NAME=Job Scrapping - Whatsapp
 
-GMAIL_USER=(your personal email id))
-GMAIL_APP_PASSWORD=...
+GMAIL_SENDER_EMAIL=(your gmail address)
+GMAIL_OAUTH_CLIENT_SECRET_FILE=config/gmail_oauth_client_secret.json
+GMAIL_TOKEN_FILE=data/gmail_token.json
+GMAIL_REPLY_TO=(your personal email id)
 
 GOOGLE_SERVICE_ACCOUNT_FILE=config/service_account.json
 GOOGLE_SHEET_URL=(your google sheet url))
@@ -137,11 +139,27 @@ SHEET_WATCH_SEND_ON_START=false
 - Place service account key at `config/service_account.json`
 - Share target Google Sheet with service account `client_email` as **Editor**
 
+### 4) Gmail API setup
+
+- Create Google OAuth desktop app credentials in Google Cloud
+- Save the OAuth client JSON file at `config/gmail_oauth_client_secret.json`
+- On first send, the script will open the Google consent flow and create `data/gmail_token.json`
+- Optionally set `GMAIL_REPLY_TO` to your preferred inbox
+
 ---
 
 ## ▶️ Run Modes
 
 ### Main full pipeline
+
+> Recommended: clear Playwright browser cache before each run to avoid stale profile lock files and session artifacts.
+>
+> - Windows:
+>   ```powershell
+>   powershell -ExecutionPolicy Bypass -File .\scripts\clear_browser_cache.ps1
+>   ```
+> - Auto-run from code (default): `main.py` now calls the same script for Windows if `CLEAR_BROWSER_CACHE_BEFORE_RUN=true` (default).
+> - If Playwright reports `ProcessSingleton` / profile lock error repeatedly, the app now falls back to a temporary profile directory, though this may require a manual re-login to WhatsApp Web.
 
 ```bash
 source .venv/bin/activate

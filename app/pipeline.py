@@ -111,7 +111,7 @@ def run_pipeline() -> None:
             sheets_client = get_gspread_client(config["service_account_file"])
             worksheet = ensure_sheet(
                 sheets_client,
-                config["gmail_user"],
+                config["gmail_reply_to"] or config["gmail_sender_email"],
                 config["google_sheet_url"],
             )
             logging.info("Step 7/9: Deduplicating jobs before sheet append.")
@@ -122,8 +122,10 @@ def run_pipeline() -> None:
                 append_relevant_jobs(worksheet, unique_jobs)
                 logging.info("Step 9/9: Sending email summary.")
                 send_email_summary(
-                    gmail_user=config["gmail_user"],
-                    gmail_app_password=config["gmail_app_password"],
+                    gmail_sender_email=config["gmail_sender_email"],
+                    gmail_oauth_client_secret_file=config["gmail_oauth_client_secret_file"],
+                    gmail_token_file=config["gmail_token_file"],
+                    gmail_reply_to=config["gmail_reply_to"],
                     recipient=SUMMARY_RECIPIENT,
                     jobs=unique_jobs,
                 )

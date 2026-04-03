@@ -1,17 +1,11 @@
 import json
 import logging
 import os
-import smtplib
 import argparse
-import socket
 import sys
 import re
 import html
-import time
 from datetime import datetime
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -20,9 +14,13 @@ import httpx
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.services.gmail_api import send_email_via_gmail_api
+
 DATA_DIR = PROJECT_ROOT / "data"
 LOG_DIR = PROJECT_ROOT / "logs"
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -33,10 +31,6 @@ SENT_TRACKER_FILE = DATA_DIR / "sent_company_emails.json"
 DEFAULT_WORKSHEET = "Filtered Jobs"
 DEFAULT_TEMPLATE_FILE = str(TEMPLATE_DIR / "company_email_template.txt")
 DEFAULT_SUBJECT_TEMPLATE = "Application for {role} - {company}"
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_TIMEOUT_SECONDS = 60
-SMTP_MAX_RETRIES = 5
 
 
 def format_sheet_datetime(value: datetime) -> str:
@@ -60,8 +54,8 @@ def setup_logging() -> None:
 def load_config() -> Dict[str, str]:
     load_dotenv(PROJECT_ROOT / ".env")
     required = [
-        "GMAIL_USER",
-        "GMAIL_APP_PASSWORD",
+        "GMAIL_SENDER_EMAIL",
+        "GMAIL_OAUTH_CLIENT_SECRET_FILE",
         "GOOGLE_SERVICE_ACCOUNT_FILE",
         "GOOGLE_SHEET_URL",
         "CV_FILE_PATH",
@@ -71,8 +65,10 @@ def load_config() -> Dict[str, str]:
         raise ValueError(f"Missing env variables: {', '.join(missing)}")
 
     cfg = {
-        "gmail_user": os.environ["GMAIL_USER"],
-        "gmail_app_password": os.environ["GMAIL_APP_PASSWORD"],
+        "gmail_sender_email": os.environ["GMAIL_SENDER_EMAIL"],
+        "gmail_oauth_client_secret_file": os.environ["GMAIL_OAUTH_CLIENT_SECRET_FILE"],
+        "gmail_token_file": os.getenv("GMAIL_TOKEN_FILE", "data/gmail_token.json"),
+        "gmail_reply_to": os.getenv("GMAIL_REPLY_TO", ""),
         "service_account_file": os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"],
         "sheet_url": os.environ["GOOGLE_SHEET_URL"],
         "worksheet_name": os.getenv("OUTREACH_WORKSHEET", DEFAULT_WORKSHEET),
@@ -81,7 +77,7 @@ def load_config() -> Dict[str, str]:
         "cv_file_path": os.environ["CV_FILE_PATH"],
     }
     # Resolve relative config/template/cv paths from project root.
-    for key in ("service_account_file", "template_file", "cv_file_path"):
+    for key in ("gmail_oauth_client_secret_file", "gmail_token_file", "service_account_file", "template_file", "cv_file_path"):
         p = Path(cfg[key])
         if not p.is_absolute():
             cfg[key] = str((PROJECT_ROOT / p).resolve())
@@ -92,7 +88,7 @@ def ensure_internet_connectivity(timeout_seconds: float = 8.0) -> None:
     test_urls = [
         "https://www.google.com/generate_204",
         "https://docs.google.com",
-        "https://smtp.gmail.com",
+        "https://gmail.googleapis.com",
     ]
     errors = []
     for url in test_urls:
@@ -194,18 +190,7 @@ def normalize_key_part(value: str) -> str:
     return " ".join(text.split())
 
 
-def compose_email(
-    sender_email: str,
-    recipient_email: str,
-    subject: str,
-    body: str,
-    cv_file_path: str,
-) -> MIMEMultipart:
-    msg = MIMEMultipart("mixed")
-    msg["From"] = sender_email
-    msg["To"] = recipient_email
-    msg["Subject"] = subject
-
+def build_email_bodies(body: str) -> Tuple[str, str]:
     def _looks_like_html(text: str) -> bool:
         return bool(re.search(r"<[^>]+>", text))
 
@@ -226,50 +211,7 @@ def compose_email(
         plain_body = body
         html_body = "<html><body>" + html.escape(body).replace("\n", "<br>\n") + "</body></html>"
 
-    alt = MIMEMultipart("alternative")
-    alt.attach(MIMEText(plain_body, "plain", "utf-8"))
-    alt.attach(MIMEText(html_body, "html", "utf-8"))
-    msg.attach(alt)
-
-    with open(cv_file_path, "rb") as f:
-        attachment = MIMEApplication(f.read(), _subtype="pdf")
-    attachment.add_header("Content-Disposition", "attachment", filename=Path(cv_file_path).name)
-    msg.attach(attachment)
-    return msg
-
-
-def send_email(gmail_user: str, app_password: str, msg: MIMEMultipart) -> bool:
-    """Send email with retries. Returns True on success, False on failure."""
-    last_error = None
-    for attempt in range(1, SMTP_MAX_RETRIES + 1):
-        try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
-                server.starttls()
-                server.login(gmail_user, app_password)
-                server.sendmail(gmail_user, [msg["To"]], msg.as_string())
-            return True
-        except (TimeoutError, socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
-            last_error = exc
-            logging.warning(
-                "SMTP send attempt %s/%s failed for %s: %s",
-                attempt,
-                SMTP_MAX_RETRIES,
-                msg["To"],
-                exc,
-            )
-            if attempt < SMTP_MAX_RETRIES:
-                wait_secs = 3 * (2 ** (attempt - 1))
-                logging.info("Waiting %d seconds before retry...", wait_secs)
-                time.sleep(wait_secs)
-            continue
-
-    logging.error(
-        "SMTP delivery failed after %s attempt(s) for %s: %s",
-        SMTP_MAX_RETRIES,
-        msg["To"],
-        last_error,
-    )
-    return False
+    return plain_body, html_body
 
 
 def get_records_with_rows(worksheet) -> Tuple[List[Dict[str, str]], Dict[str, int]]:
@@ -356,26 +298,26 @@ def main() -> None:
                 location=location,
                 experience=experience,
                 skills=skills,
-                sender_name=cfg["gmail_user"].split("@")[0],
+                sender_name=cfg["gmail_sender_email"].split("@")[0],
             )
-            msg = compose_email(
-                sender_email=cfg["gmail_user"],
-                recipient_email=contact,
+            plain_body, html_body = build_email_bodies(body)
+            send_email_via_gmail_api(
+                client_secret_file=cfg["gmail_oauth_client_secret_file"],
+                token_file=cfg["gmail_token_file"],
+                sender_email=cfg["gmail_sender_email"],
+                to_email=contact,
                 subject=subject,
-                body=body,
-                cv_file_path=cfg["cv_file_path"],
+                html_body=html_body,
+                text_body=plain_body,
+                attachment_path=cfg["cv_file_path"],
+                reply_to=cfg["gmail_reply_to"] or None,
             )
-            if send_email(cfg["gmail_user"], cfg["gmail_app_password"], msg):
-                now = format_sheet_datetime(datetime.now())
-                mark_row(worksheet, row_num, col_idx["outreach_status"], "SENT")
-                mark_row(worksheet, row_num, col_idx["outreach_sent_at"], now)
-                sent_tracker[key] = now
-                sent_count += 1
-                logging.info("Sent outreach email to %s (%s - %s)", contact, company, role)
-            else:
-                mark_row(worksheet, row_num, col_idx["outreach_status"], "FAILED")
-                failed_count += 1
-                logging.warning("Failed to send outreach email to %s (%s - %s) after retries", contact, company, role)
+            now = format_sheet_datetime(datetime.now())
+            mark_row(worksheet, row_num, col_idx["outreach_status"], "SENT")
+            mark_row(worksheet, row_num, col_idx["outreach_sent_at"], now)
+            sent_tracker[key] = now
+            sent_count += 1
+            logging.info("Sent outreach email to %s (%s - %s)", contact, company, role)
         except Exception as exc:
             mark_row(worksheet, row_num, col_idx["outreach_status"], "FAILED")
             failed_count += 1
