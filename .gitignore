@@ -33,3 +33,5 @@ data/whatsapp_session/
 .DS_Store
 .idea/
 .vscode/
+
+config/Saima_gmail_oauth_client_secret.json

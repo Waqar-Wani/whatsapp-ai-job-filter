@@ -187,6 +187,25 @@ source .venv/bin/activate
 python scripts/company_outreach.py --limit 1
 ```
 
+### Finance mailer only
+
+```bash
+source .venv/bin/activate
+python scripts/run_finance_mailer.py
+```
+
+### Finance mailer every 20 minutes on Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_finance_mailer_scheduled.ps1
+```
+
+Windows Task Scheduler template:
+
+```text
+Finance_Task_Scheduler.xml
+```
+
 ### Watch sheet and trigger outreach on new rows
 
 ```bash
