@@ -22,7 +22,7 @@ This project automates the full pipeline:
 2. Finds and opens group: (`Mention group name0`).
 3. Scrolls chat history for ~30 seconds and expands truncated messages (`Read more`).
 4. Scrapes messages (sender, text, timestamp) to local temp JSON.
-5. Filters messages with OpenRouter AI into structured job fields.
+5. Filters messages with Groq or OpenRouter AI into structured job fields.
 6. Saves relevant jobs to Google Sheet (`Filtered Jobs`) with dedup logic.
 7. Sends outreach emails to company contacts with CV attachment via Gmail API.
 8. Ensures already-contacted companies/rows are not emailed again.
@@ -44,8 +44,8 @@ This project automates the full pipeline:
             │ new messages after last_processed
             ▼
 ┌───────────────────────────────┐
-│ OpenRouter AI (JSON output)   │
-│ relevant/company/role/...     │
+│ Groq / OpenRouter AI          │
+│ JSON extraction + parsing     │
 └───────────┬───────────────────┘
             │ dedup + append
             ▼
@@ -112,9 +112,15 @@ Create `.env` from `.env.example` and fill values:
 
 ```env
 OPENROUTER_API_KEY=...
-OPENROUTER_MODEL=openai/gpt-4o-mini
+OPENROUTER_MODEL=openrouter/free
 OPENROUTER_SITE_URL=
 OPENROUTER_SITE_NAME=Job Scrapping - Whatsapp
+
+GROQ_API_KEY=...
+GROQ_MODEL=llama-3.3-70b-versatile
+
+GOOGLE_AI_KEY=
+GOOGLE_AI_MODEL=gemini-flash-latest
 
 GMAIL_SENDER_EMAIL=(your gmail address)
 GMAIL_OAUTH_CLIENT_SECRET_FILE=config/gmail_oauth_client_secret.json
@@ -172,6 +178,18 @@ python main.py
 source .venv/bin/activate
 python scripts/ai_health_check.py --prompt "Say only: AI working"
 ```
+
+What it checks:
+
+- OpenRouter
+- Groq
+- Gemini
+
+Notes:
+
+- The script now prints provider error bodies so quota, auth, and model issues are easier to identify.
+- OpenRouter health checks use a very small token limit to avoid failing just because account credits are low.
+- Groq is currently the most reliable primary provider in this setup.
 
 ### Google Sheets test
 
@@ -268,11 +286,15 @@ Manual test:
 ### No new rows in sheet
 - Check `logs/automation.log`
 - Confirm `last_processed.json` is not ahead of current chat messages
-- Ensure OpenRouter key/model are valid
+- Ensure at least one AI provider is working by running `python scripts/ai_health_check.py`
+- Verify `GROQ_MODEL=llama-3.3-70b-versatile` or another currently supported Groq production model
+- If OpenRouter fails with `402`, reduce usage or add credits
+- If Gemini fails with `429`, check quota and billing
 
 ### Gmail not sending
-- Use Gmail App Password (not normal password)
-- Confirm 2FA is enabled for Gmail account
+- Confirm OAuth desktop credentials exist at `config/gmail_oauth_client_secret.json`
+- Re-authenticate if `data/gmail_token.json` is expired or missing
+- Confirm the sender account matches `GMAIL_SENDER_EMAIL`
 
 ### Sheet write fails
 - Re-check sharing permission for service account email
@@ -287,6 +309,7 @@ Manual test:
 ## 📘 Notes
 
 - `logs/automation.log` is the single unified log file for main + outreach + trigger flows.
+- `scripts/ai_health_check.py` is the quickest way to confirm whether Groq, OpenRouter, or Gemini is healthy before a full run.
 - Keep `.env` and `config/service_account.json` private.
 - Rotate API keys/app passwords if exposed.
 

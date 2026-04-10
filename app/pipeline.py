@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, List
 
 from app.core.config import validate_env
@@ -30,15 +31,28 @@ def build_source_key(message: Dict[str, Any]) -> str:
 
 def build_relevant_jobs(messages_to_analyze: List[Dict[str, Any]], config: Dict[str, str]) -> List[Dict[str, Any]]:
     relevant_jobs: List[Dict[str, Any]] = []
-    for message in messages_to_analyze:
+    ai_delay = float(config.get("ai_request_delay_seconds", 2.0))
+    total_messages = len(messages_to_analyze)
+    for index, message in enumerate(messages_to_analyze, start=1):
         ai_result = analyze_job_post(
             text=message["text"],
             openrouter_key=config["openrouter_api_key"],
             openrouter_model=config["openrouter_model"],
             openrouter_site_url=config["openrouter_site_url"],
             openrouter_site_name=config["openrouter_site_name"],
+            groq_api_key=config["groq_api_key"],
+            groq_model=config["groq_model"],
         )
-        if not ai_result.get("relevant"):
+
+        parsed_fields = [
+            str(ai_result.get("company", "")).strip(),
+            str(ai_result.get("role", "")).strip(),
+            str(ai_result.get("location", "")).strip(),
+            str(ai_result.get("experience", "")).strip(),
+            str(ai_result.get("skills", "")).strip(),
+            str(ai_result.get("contact_email", "")).strip(),
+        ]
+        if not any(parsed_fields):
             continue
 
         skills_value = ai_result.get("skills", "")
@@ -58,6 +72,14 @@ def build_relevant_jobs(messages_to_analyze: List[Dict[str, Any]], config: Dict[
                 "source_key": build_source_key(message),
             }
         )
+
+        if ai_delay > 0 and index < total_messages:
+            logging.info(
+                "Waiting %.1f seconds before next AI request to reduce rate limiting.",
+                ai_delay,
+            )
+            time.sleep(ai_delay)
+
     return relevant_jobs
 
 
@@ -100,7 +122,7 @@ def run_pipeline() -> None:
         run_outreach_task()
         return
 
-    logging.info("Step 5/9: Running AI filtering for %s message(s).", len(messages_to_analyze))
+    logging.info("Step 5/9: Running AI parsing for %s message(s).", len(messages_to_analyze))
     relevant_jobs = build_relevant_jobs(messages_to_analyze, config)
 
     if relevant_jobs:
@@ -144,7 +166,7 @@ def run_pipeline() -> None:
             # fallback: keep processing, do not stop entire pipeline
 
     else:
-        logging.info("No relevant jobs detected from scraped messages.")
+        logging.info("No job posts detected from scraped messages.")
 
     latest_timestamp = max(message["timestamp"] for message in messages_to_analyze)
     save_last_processed_timestamp(latest_timestamp)
